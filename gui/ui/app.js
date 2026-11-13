@@ -6,6 +6,9 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const icon = (name, cls = "ico") => `<svg class="${cls}"><use href="#i-${name}"/></svg>`;
 
 const PAGE = 60;
+const APP_NAME = "Rusting Medal";
+const pref = (k, d) => localStorage.getItem(`rm.${k}`) ?? d;
+const setPref = (k, v) => localStorage.setItem(`rm.${k}`, v);
 const S = {
   info: null,
   profile: null,         // { userId, username } when viewing someone else's profile
@@ -15,13 +18,14 @@ const S = {
   anchor: null,          // last clicked index for shift-select
   query: "",
   game: "",
-  sort: "newest",        // newest | oldest | longest | shortest
-  view: "all",           // all | new
+  sort: pref("sort", "newest"),  // newest | oldest | longest | shortest
+  view: pref("view", "all"),     // all | new
   offset: 0,
   loading: false,
   done: false,
   error: null,
   dls: new Map(),        // id -> {title, thumb, state, done, total, path, error}
+  batch: { done: 0, failed: 0 }, // counts for the current run of downloads
 };
 
 /* ---------------- formatting ---------------- */
@@ -136,11 +140,17 @@ function renderLibraryShell() {
       else renderLoggedOut();
     };
   }
-  $("#search").oninput = (e) => { S.query = e.target.value.trim().toLowerCase(); renderGrid(); };
+  let searchTimer = null;
+  $("#search").oninput = (e) => {
+    clearTimeout(searchTimer);
+    const v = e.target.value.trim().toLowerCase();
+    searchTimer = setTimeout(() => { S.query = v; renderGrid(); }, 120);
+  };
   $("#game-filter").onchange = (e) => { S.game = e.target.value; renderGrid(); };
-  $("#sort-select").onchange = (e) => { S.sort = e.target.value; renderGrid(); };
+  $("#sort-select").onchange = (e) => { S.sort = e.target.value; setPref("sort", S.sort); renderGrid(); };
   document.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => {
     S.view = b.dataset.view;
+    setPref("view", S.view);
     document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", x === b));
     renderGrid();
   }));
@@ -148,6 +158,7 @@ function renderLibraryShell() {
   $("#reload").onclick = () => S.profile ? openProfile(S.profile.username) : loadLibrary(true);
   $("#grid").addEventListener("click", onCardClick);
   $("#grid").addEventListener("dblclick", onCardDbl);
+  $("#grid").addEventListener("contextmenu", onCardContext);
   $("#grid").addEventListener("mouseover", onHover);
   $("#grid").addEventListener("mouseout", onUnhover);
   $("#main").onscroll = maybeLoadMore;
@@ -354,6 +365,18 @@ function onCardDbl(e) {
   startDownloads([c]);
 }
 
+function onCardContext(e) {
+  const card = e.target.closest(".card[data-id]");
+  if (!card) return;
+  e.preventDefault();
+  const id = card.dataset.id;
+  const c = S.byId.get(id);
+  const d = S.dls.get(id);
+  if (d?.state === "done" && d.path) return invoke("reveal", { path: d.path });
+  if (c?.saved) return invoke("reveal_clip", { id }).catch((err) => toast(String(err), "err"));
+  toast("Not downloaded yet. Double-click to grab it");
+}
+
 function toggleSelectAll() {
   const list = visibleClips();
   const all = list.length && list.every((c) => S.selected.has(c.id));
@@ -413,7 +436,9 @@ function upsertDl(id, patch) {
 
 function updateQueueBadge(pulse = false) {
   const items = [...S.dls.values()];
-  const active = items.filter((d) => d.state === "queued" || d.state === "downloading").length;
+  const activeItems = items.filter((d) => d.state === "queued" || d.state === "downloading");
+  const active = activeItems.length;
+  const failed = items.filter((d) => d.state === "error").length;
   const count = active || items.length;
   const badge = $("#queue-count");
   badge.hidden = count === 0;
@@ -421,11 +446,44 @@ function updateQueueBadge(pulse = false) {
   const btn = $("#queue-btn");
   btn.classList.toggle("has-active", active > 0);
   btn.title = active ? `${active} downloading` : "Downloads";
+  $("#retry-failed").hidden = failed === 0;
+  $("#retry-failed").textContent = failed > 1 ? `Retry ${failed} failed` : "Retry failed";
+  updateTitle(activeItems);
   if (pulse) {
     btn.classList.remove("pulse");
     void btn.offsetWidth;
     btn.classList.add("pulse");
   }
+}
+
+// Overall progress in the window title, so it's visible from the taskbar.
+function updateTitle(activeItems) {
+  if (!activeItems.length) { document.title = APP_NAME; return; }
+  const total = activeItems.reduce((t, d) => t + (d.total || 0), 0);
+  const done = activeItems.reduce((t, d) => t + (d.done || 0), 0);
+  const pct = total ? ` · ${Math.floor((done / total) * 100)}%` : "";
+  document.title = `${APP_NAME} — ${activeItems.length} downloading${pct}`;
+}
+
+// Called whenever a download settles; toasts once the whole run is finished.
+function maybeFinishBatch() {
+  const active = [...S.dls.values()].some((d) => d.state === "queued" || d.state === "downloading");
+  if (active) return;
+  const { done, failed } = S.batch;
+  S.batch = { done: 0, failed: 0 };
+  if (done + failed < 2) return;
+  if (failed) toast(`Downloaded ${done} clip${done === 1 ? "" : "s"}, ${failed} failed`, "err");
+  else toast(`Downloaded ${done} clips`);
+}
+
+function retryDownloads(ids) {
+  const clips = ids.map((id) => {
+    const c = S.byId.get(id);
+    if (c) return c;
+    const d = S.dls.get(id) || {};
+    return { id, title: d.title || "Finding clip…", url: null, previewUrl: null, thumb: d.thumb || null, duration: 0, created: 0, game: null, saved: false };
+  });
+  startDownloads(clips);
 }
 
 function renderDrawer() {
@@ -446,7 +504,7 @@ function dlHTML(id, d) {
     case "queued": sub = "Waiting…"; break;
     case "downloading": sub = d.total ? `${Math.round(pct)}% · ${fmtMB(d.done)} of ${fmtMB(d.total)}` : fmtMB(d.done); break;
     case "done": sub = d.skipped ? "Already in your folder" : `${fmtMB(d.bytes)} · Show in folder`; state = icon("check"); break;
-    case "error": sub = d.error; state = icon("alert"); break;
+    case "error": sub = `${d.error} · Click to retry`; state = icon("refresh"); break;
   }
   const cls = ["dl", d.state, d.state === "queued" && "waiting"].filter(Boolean).join(" ");
   const bar = d.state === "queued" || d.state === "downloading" ? `<div class="dl-bar"><i style="width:${pct}%"></i></div>` : "";
@@ -525,6 +583,7 @@ listen("dl-progress", ({ payload: p }) => {
   const d = S.dls.get(p.id);
   const first = d?.state !== "downloading";
   upsertDl(p.id, { state: "downloading", done: p.done, total: p.total });
+  updateTitle([...S.dls.values()].filter((d) => d.state === "queued" || d.state === "downloading"));
   if (first) { patchDl(p.id); patchCard(p.id); return; }
   patchDl(p.id);
   const bar = document.querySelector(`.card[data-id="${CSS.escape(p.id)}"] .progress i`);
@@ -532,17 +591,21 @@ listen("dl-progress", ({ payload: p }) => {
 });
 listen("dl-done", ({ payload: p }) => {
   upsertDl(p.id, { state: "done", path: p.path, bytes: p.bytes, skipped: p.skipped });
+  S.batch.done++;
   const c = S.byId.get(p.id);
   if (c) c.saved = true;
   patchDl(p.id);
   updateQueueBadge();
+  maybeFinishBatch();
   const el = patchCard(p.id);
   if (el && !p.skipped) { el.classList.add("just-done"); setTimeout(() => el.classList.remove("just-done"), 1500); }
 });
 listen("dl-error", ({ payload: p }) => {
   upsertDl(p.id, { state: "error", error: p.error });
+  S.batch.failed++;
   patchDl(p.id);
   updateQueueBadge();
+  maybeFinishBatch();
   patchCard(p.id);
 });
 
@@ -619,8 +682,13 @@ $("#clear-done").onclick = () => {
   renderDrawer();
 };
 $("#dl-list").onclick = (e) => {
-  const li = e.target.closest(".dl.done");
-  if (li) invoke("reveal", { path: S.dls.get(li.dataset.id).path });
+  const li = e.target.closest(".dl.done, .dl.error");
+  if (!li) return;
+  if (li.classList.contains("error")) return retryDownloads([li.dataset.id]);
+  invoke("reveal", { path: S.dls.get(li.dataset.id).path });
+};
+$("#retry-failed").onclick = () => {
+  retryDownloads([...S.dls].filter(([, d]) => d.state === "error").map(([id]) => id));
 };
 $("#watch-toggle").onchange = async (e) => {
   await invoke("set_clipboard_watch", { on: e.target.checked });
@@ -653,6 +721,15 @@ $("#token-form").onsubmit = async (e) => {
 };
 
 document.addEventListener("keydown", (e) => {
+  const search = $("#search");
+  if ((e.key === "/" && !e.target.matches("input, textarea")) || (e.ctrlKey && e.key.toLowerCase() === "f")) {
+    if (search) { e.preventDefault(); search.focus(); search.select(); }
+    return;
+  }
+  if (e.target === search && e.key === "Escape") {
+    search.value = ""; S.query = ""; search.blur(); renderGrid();
+    return;
+  }
   if (e.target.matches("input")) return;
   if (e.key === "Escape" && S.selected.size) { S.selected.clear(); renderGrid(); }
   if (e.key.toLowerCase() === "a" && e.ctrlKey && $("#grid")) { e.preventDefault(); toggleSelectAll(); }

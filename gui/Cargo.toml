@@ -1,8 +1,8 @@
 [package]
-name = "medal-clips"
-version = "0.1.0"
+name = "rusting-medal"
+version = "0.2.0"
 edition = "2021"
-description = "Medal Clips — pick and download your Medal.tv clips"
+description = "Rusting Medal - pick and download your Medal.tv clips"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

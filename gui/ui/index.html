@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Medal Clips</title>
+  <title>Rusting Medal</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -26,12 +26,12 @@
   <header class="top">
     <div class="brand">
       <span class="brand-mark"><svg><use href="#i-download"/></svg></span>
-      Medal Clips
+      Rusting Medal
     </div>
 
     <form id="link-form" class="link-box" autocomplete="off">
       <svg class="ico"><use href="#i-link"/></svg>
-      <input id="link-input" placeholder="Paste clip links or a profile (medal.tv/u/…)" spellcheck="false" />
+      <input id="link-input" placeholder="Paste clip links or a profile (medal.tv/u/…)" spellcheck="false" title="Paste clip links, a .txt list or a profile link" />
       <button id="link-submit" class="btn btn-quiet" type="submit">Download</button>
     </form>
 
@@ -56,6 +56,7 @@
         <h2>Downloads</h2>
         <div class="drawer-actions">
           <button id="open-folder" class="btn btn-quiet btn-sm">Open folder</button>
+          <button id="retry-failed" class="btn btn-quiet btn-sm" hidden>Retry failed</button>
           <button id="clear-done" class="btn btn-quiet btn-sm">Clear finished</button>
           <button id="close-drawer" class="icon-btn" title="Close"><svg class="ico"><use href="#i-x"/></svg></button>
         </div>

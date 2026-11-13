@@ -11,7 +11,8 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::webview::{NewWindowFeatures, NewWindowResponse};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -19,6 +20,8 @@ const PARALLEL_CLIPS: usize = 6;
 const PARALLEL_RESOLVE: usize = 16;
 const FIRST_CHUNK_BYTES: u64 = 2 * 1024 * 1024; // 2 MiB initial probe+chunk
 const MAX_CHUNKS_PER_CLIP: u64 = 4;
+const WRITE_BUF_BYTES: usize = 1024 * 1024; // batch disk writes per chunk stream
+const SAVED_CACHE_TTL: Duration = Duration::from_secs(3);
 
 /// Runs inside the Medal login window. Once the user has signed in, Medal stores
 /// the session in the `medal-auth` cookie; we hand it back to the app by
@@ -55,6 +58,35 @@ struct AppState {
     resolve_sem: Arc<Semaphore>,
     active: Mutex<HashSet<String>>,
     clipboard_watch: Arc<AtomicBool>,
+    saved_cache: Mutex<SavedCache>,
+}
+
+/// Short-lived cache of "which clip ids already exist in the output folder", so queuing
+/// 200 clips doesn't re-read the folder 400 times.
+#[derive(Default)]
+struct SavedCache {
+    dir: std::path::PathBuf,
+    at: Option<Instant>,
+    map: std::collections::HashMap<String, std::path::PathBuf>,
+}
+
+impl AppState {
+    fn saved_path(&self, dir: &std::path::Path, id: &str) -> Option<std::path::PathBuf> {
+        let mut c = self.saved_cache.lock().unwrap();
+        let fresh = c.dir == dir && c.at.is_some_and(|t| t.elapsed() < SAVED_CACHE_TTL);
+        if !fresh {
+            c.map = medal::saved_ids(dir);
+            c.dir = dir.to_path_buf();
+            c.at = Some(Instant::now());
+        }
+        c.map.get(id).cloned()
+    }
+    fn mark_saved(&self, dir: &std::path::Path, id: &str, path: std::path::PathBuf) {
+        let mut c = self.saved_cache.lock().unwrap();
+        if c.dir == dir {
+            c.map.insert(id.to_string(), path);
+        }
+    }
 }
 
 type Res<T> = Result<T, String>;
@@ -169,41 +201,80 @@ async fn open_login(app: AppHandle) -> Res<()> {
         let _ = w.set_focus();
         return Ok(());
     }
-    let handle = app.clone();
-    WebviewWindowBuilder::new(
+    build_auth_window(
         &app,
-        "login",
-        WebviewUrl::External("https://medal.tv/login".parse().unwrap()),
+        "login".into(),
+        "https://medal.tv/login".parse().unwrap(),
+        None,
     )
-    .title("Log in to Medal")
-    .inner_size(520.0, 780.0)
-    .initialization_script(LOGIN_JS)
-    .on_navigation(move |url| {
-        if url.host_str() == Some("medal-dl.invalid") {
-            let q: std::collections::HashMap<String, String> = url.query_pairs().into_owned().collect();
-            if let (Some(u), Some(k)) = (q.get("u"), q.get("k")) {
-                let token = format!("{u},{k}");
-                let app = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    match finish_login(&app, token).await {
-                        Ok(()) => {
-                            if let Some(w) = app.get_webview_window("login") {
-                                let _ = w.close();
-                            }
-                        }
-                        Err(e) => {
-                            let _ = app.emit("auth-error", e);
-                        }
-                    }
-                });
-            }
-            return false;
-        }
-        true
-    })
-    .build()
     .map_err(err)?;
     Ok(())
+}
+
+static AUTH_POPUP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Builds the Medal login window, or a popup opened from it via `window.open`
+/// (Discord / Google / Steam / Twitch … sign-in buttons). Without a new-window
+/// handler WebView2 silently swallows those popups, so social logins did nothing.
+/// Popups are created with the opener's features/environment so `window.opener`
+/// and `postMessage` back to Medal keep working, and they get the same cookie
+/// grabber + interception as the main login window.
+fn build_auth_window(
+    app: &AppHandle,
+    label: String,
+    url: tauri::webview::Url,
+    features: Option<NewWindowFeatures>,
+) -> tauri::Result<WebviewWindow> {
+    let nav_app = app.clone();
+    let popup_app = app.clone();
+    let is_popup = features.is_some();
+    let mut b = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
+        .title(if is_popup { "Sign in" } else { "Log in to Medal" })
+        .initialization_script(LOGIN_JS)
+        .on_navigation(move |url| {
+            if url.host_str() == Some("medal-dl.invalid") {
+                let q: std::collections::HashMap<String, String> =
+                    url.query_pairs().into_owned().collect();
+                if let (Some(u), Some(k)) = (q.get("u"), q.get("k")) {
+                    let token = format!("{u},{k}");
+                    let app = nav_app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        match finish_login(&app, token).await {
+                            Ok(()) => close_auth_windows(&app),
+                            Err(e) => {
+                                let _ = app.emit("auth-error", e);
+                            }
+                        }
+                    });
+                }
+                return false;
+            }
+            true
+        })
+        .on_new_window(move |url, features| {
+            let n = AUTH_POPUP_SEQ.fetch_add(1, Ordering::Relaxed);
+            match build_auth_window(&popup_app, format!("login-popup-{n}"), url, Some(features)) {
+                Ok(window) => NewWindowResponse::Create { window },
+                Err(_) => NewWindowResponse::Deny,
+            }
+        });
+    b = match features {
+        Some(f) => {
+            let has_size = f.size().is_some();
+            let b = b.window_features(f);
+            if has_size { b } else { b.inner_size(520.0, 720.0) }
+        }
+        None => b.inner_size(520.0, 780.0),
+    };
+    b.build()
+}
+
+fn close_auth_windows(app: &AppHandle) {
+    for (label, w) in app.webview_windows() {
+        if label == "login" || label.starts_with("login-popup-") {
+            let _ = w.close();
+        }
+    }
 }
 
 async fn finish_login(app: &AppHandle, token: String) -> Res<()> {
@@ -279,6 +350,16 @@ fn reveal(path: String) -> Res<()> {
         let _ = path;
     }
     Ok(())
+}
+
+/// Show an already-downloaded clip (looked up by id in the output folder) in Explorer.
+#[tauri::command]
+fn reveal_clip(state: State<'_, AppState>, id: String) -> Res<()> {
+    let dir = state.cfg.lock().unwrap().out_dir();
+    let path = medal::saved_ids(&dir)
+        .remove(&id)
+        .ok_or("That clip isn't in your folder anymore.")?;
+    reveal(path.display().to_string())
 }
 
 #[tauri::command]
@@ -395,14 +476,30 @@ async fn stream_range_into(
     app: AppHandle,
     last_emit: Arc<Mutex<Instant>>,
 ) -> anyhow::Result<()> {
+    // Network packets are small (~16 KiB); batch them so we only hop to the blocking
+    // pool about once per WRITE_BUF_BYTES instead of once per packet.
+    async fn flush(file: &Arc<std::fs::File>, buf: Vec<u8>, off: u64) -> anyhow::Result<Vec<u8>> {
+        let f = file.clone();
+        let buf = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
+            write_all_at(&f, &buf, off)?;
+            Ok(buf)
+        })
+        .await??;
+        Ok(buf)
+    }
+
     let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::with_capacity(WRITE_BUF_BYTES);
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         let len = chunk.len() as u64;
-        let f = file.clone();
-        let off = offset;
-        tokio::task::spawn_blocking(move || write_all_at(&f, &chunk, off)).await??;
-        offset += len;
+        buf.extend_from_slice(&chunk);
+        if buf.len() >= WRITE_BUF_BYTES {
+            let n = buf.len() as u64;
+            buf = flush(&file, buf, offset).await?;
+            buf.clear();
+            offset += n;
+        }
         let cur = done.fetch_add(len, Ordering::Relaxed) + len;
         let should_emit = {
             let mut last = last_emit.lock().unwrap();
@@ -417,6 +514,9 @@ async fn stream_range_into(
             let _ = app.emit("dl-progress", Progress { id: id.clone(), done: cur, total });
         }
     }
+    if !buf.is_empty() {
+        flush(&file, buf, offset).await?;
+    }
     Ok(())
 }
 
@@ -428,7 +528,7 @@ async fn run_download(app: &AppHandle, state: &AppState, mut clip: ClipInfo) -> 
     tokio::fs::create_dir_all(&dir).await?;
 
     // Fast skip before hitting network
-    if let Some(p) = medal::saved_ids(&dir).get(&clip.id) {
+    if let Some(p) = state.saved_path(&dir, &clip.id) {
         return Ok(Done { id: clip.id, path: p.display().to_string(), bytes: 0, skipped: true });
     }
 
@@ -449,7 +549,7 @@ async fn run_download(app: &AppHandle, state: &AppState, mut clip: ClipInfo) -> 
     let _dl_permit = state.dl_sem.acquire().await;
 
     // Re-check disk in case another job just saved it
-    if let Some(p) = medal::saved_ids(&dir).get(&clip.id) {
+    if let Some(p) = state.saved_path(&dir, &clip.id) {
         return Ok(Done { id: clip.id, path: p.display().to_string(), bytes: 0, skipped: true });
     }
 
@@ -600,6 +700,7 @@ async fn run_download(app: &AppHandle, state: &AppState, mut clip: ClipInfo) -> 
     };
 
     tokio::fs::rename(&part, &path).await?;
+    state.mark_saved(&dir, &clip.id, path.clone());
     Ok(Done { id: clip.id, path: path.display().to_string(), bytes: total_bytes, skipped: false })
 }
 
@@ -647,6 +748,7 @@ fn main() {
             resolve_sem: Arc::new(Semaphore::new(PARALLEL_RESOLVE)),
             active: Mutex::new(HashSet::new()),
             clipboard_watch: watch,
+            saved_cache: Mutex::new(SavedCache::default()),
         })
         .setup(move |app| {
             start_clipboard_watch(app.handle().clone(), watch2);
@@ -662,12 +764,13 @@ fn main() {
             pick_dir,
             open_dir,
             reveal,
+            reveal_clip,
             set_clipboard_watch,
             download,
             add_links
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Medal Clips");
+        .expect("error while running Rusting Medal");
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Medal Clips",
-  "version": "0.1.0",
+  "productName": "Rusting Medal",
+  "version": "0.2.0",
   "identifier": "dev.medalclips.app",
   "build": {
     "frontendDist": "ui"
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Medal Clips",
+        "title": "Rusting Medal",
         "width": 1240,
         "height": 800,
         "minWidth": 780,

@@ -265,7 +265,8 @@ main::-webkit-scrollbar-thumb, .dl-list::-webkit-scrollbar-thumb { background: v
 .dl-state { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; }
 .dl.done .dl-state { background: rgba(79, 209, 139, .14); color: var(--ok); animation: pop .5s var(--ease); }
 .dl.error .dl-state { color: var(--danger); }
-.dl.done { cursor: pointer; }
+.dl.done, .dl.error { cursor: pointer; }
+.dl.error:hover .dl-state { background: rgba(255, 255, 255, .06); }
 
 .watch { display: flex; gap: var(--s3); align-items: flex-start; margin: var(--s2); padding: var(--s3); border-radius: 10px; background: var(--surface-2); cursor: pointer; }
 .watch input { display: none; }

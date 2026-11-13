@@ -1,14 +1,33 @@
-# Medal Clips (`medal-clips` + `medal-dl`)
+# Rusting Medal
 
-Super fast Medal.tv clip downloader for montages. Saves the original MP4 with no watermark.
+Super fast Medal.tv clip downloader for montages, written in Rust. Saves the original MP4 with no watermark.
 
-## Desktop app (`medal-clips.exe`)
-`gui\target\release\medal-clips.exe`
+- **Desktop app:** `rusting-medal.exe` (Tauri 2)
+- **CLI:** `medal-dl.exe`
 
-- **Log in with Medal** (opens Medal's sign-in window, or use a session token as fallback) to browse your own clip library in a visual grid with thumbnails and hover previews.
-- **Pick what you want**: click to select, `Shift`+click for ranges, `Ctrl+A` for all, double-click to grab one right away, filter by **Not downloaded** or **Game**, and sort by **Newest / Oldest / Longest / Shortest**.
-- **Paste or drop anywhere**: paste clip links (`Ctrl+V` anywhere in the window), drag-and-drop links or `.txt` files onto the window, paste a public profile link (`medal.tv/u/…`) to browse someone's clips, or turn on **Grab copied links** in the Downloads drawer.
-- **4-way chunked CDN streaming + 6 parallel clips**: uses Medal's fast JSON endpoint (`api/content/{id}`) and parallel HTTP byte-range chunks for larger clips, saving raw watermark-free `.mp4` files to `Videos\Medal Clips`.
+> Working on the code (human or AI)? Read [AGENTS.md](AGENTS.md) and [ROADMAP.md](ROADMAP.md) first.
+
+## Desktop app (`rusting-medal.exe`)
+`gui\target\release\rusting-medal.exe`
+
+- **Log in with Medal**: opens Medal's sign-in window. Email, Discord, Steam and the other social logins all work there. If Google/YouTube refuses the embedded window, use **Log in with a session token** instead.
+- **Browse your library** in a grid with thumbnails and hover previews. Filter by **Not downloaded** or **Game**, and sort by **Newest / Oldest / Longest / Shortest**. Sort and filter choices are remembered between launches.
+- **Pick what you want**: click to select, `Shift`+click for ranges, double-click to download one right away, then press **Download**.
+- **Paste or drop anywhere**: clip links, `.txt` files with links, or a public profile link (`medal.tv/u/…`) to browse someone else's clips. You can also turn on **Grab copied links** in the Downloads drawer.
+- **Downloads drawer**: click a finished item to show it in Explorer, click a failed one to retry it, or use **Retry failed** to retry them all. The window title shows overall progress.
+- **Fast**: 6 clips download in parallel, and bigger clips are split into 4 byte-range chunks. Files are saved as raw, watermark-free `.mp4` in `Videos\Medal Clips`.
+
+### Shortcuts
+| Key | Action |
+| --- | --- |
+| `Ctrl+A` | Select / deselect all visible clips |
+| `Shift`+click | Select a range |
+| Double-click | Download that clip now |
+| Right-click | Show a downloaded clip in its folder |
+| `Enter` | Download the selection |
+| `Ctrl+F` or `/` | Search |
+| `Esc` | Clear the search box, or clear the selection |
+| `Ctrl+V` | Paste links anywhere in the window |
 
 ## CLI (`medal-dl.exe`)
 `target\release\medal-dl.exe`
@@ -27,9 +46,10 @@ medal-dl mine --limit 20          only your newest 20
 ```
 
 ## Build from source
+Requires Rust stable (MSVC) and the Visual Studio C++ Build Tools. Node isn't needed.
 ```
 cd gui
-cargo build --release   # -> gui\target\release\medal-clips.exe
+cargo build --release   # -> gui\target\release\rusting-medal.exe
 
 cd ..
 cargo build --release   # -> target\release\medal-dl.exe
