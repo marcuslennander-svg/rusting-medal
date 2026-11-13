@@ -1,0 +1,25 @@
+[package]
+name = "medal-dl"
+version = "0.1.0"
+edition = "2021"
+description = "Super fast Medal.tv clip downloader for montage editors"
+
+[dependencies]
+anyhow = "1"
+arboard = { version = "3", default-features = false }
+clap = { version = "4", features = ["derive"] }
+console = "0.15"
+dirs = "5"
+futures-util = "0.3"
+indicatif = "0.17"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "http2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync", "time"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

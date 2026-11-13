@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Medal Clips</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- icon sprite: one stroke style everywhere (24px grid, 1.75 stroke) -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14M10 16l-4-4 4-4M6 12h9"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5M12 16v.01"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/></symbol>
+      <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="15.5" rx="2"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="top">
+    <div class="brand">
+      <span class="brand-mark"><svg><use href="#i-download"/></svg></span>
+      Medal Clips
+    </div>
+
+    <form id="link-form" class="link-box" autocomplete="off">
+      <svg class="ico"><use href="#i-link"/></svg>
+      <input id="link-input" placeholder="Paste clip links or a profile (medal.tv/u/…)" spellcheck="false" />
+      <button id="link-submit" class="btn btn-quiet" type="submit">Download</button>
+    </form>
+
+    <div class="top-right">
+      <button id="folder-btn" class="chip" title="Change where clips are saved">
+        <svg class="ico"><use href="#i-folder"/></svg>
+        <span id="folder-name">…</span>
+      </button>
+      <button id="queue-btn" class="chip" title="Downloads">
+        <svg class="ico"><use href="#i-download"/></svg>
+        <span id="queue-count" class="num" hidden></span>
+      </button>
+      <div id="account"></div>
+    </div>
+  </header>
+
+  <div class="body">
+    <main id="main"></main>
+
+    <aside id="drawer" class="drawer" hidden>
+      <div class="drawer-head">
+        <h2>Downloads</h2>
+        <div class="drawer-actions">
+          <button id="open-folder" class="btn btn-quiet btn-sm">Open folder</button>
+          <button id="clear-done" class="btn btn-quiet btn-sm">Clear finished</button>
+          <button id="close-drawer" class="icon-btn" title="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+        </div>
+      </div>
+      <ul id="dl-list" class="dl-list"></ul>
+      <label class="watch">
+        <input type="checkbox" id="watch-toggle" />
+        <span class="switch"></span>
+        <span>
+          <b>Grab copied links</b>
+          <small>Copy a Medal link anywhere and it downloads on its own</small>
+        </span>
+      </label>
+    </aside>
+  </div>
+
+  <div id="selbar" class="selbar" hidden>
+    <span id="sel-text" class="num"></span>
+    <button id="sel-clear" class="btn btn-quiet">Clear</button>
+    <button id="sel-download" class="btn btn-accent">
+      <svg class="ico"><use href="#i-download"/></svg>
+      <span id="sel-btn-text">Download</span>
+    </button>
+  </div>
+
+  <dialog id="token-dialog" class="dialog">
+    <form method="dialog" id="token-form">
+      <h2>Log in with a session token</h2>
+      <p class="muted">Use this if the login window doesn't work for you.</p>
+      <ol class="steps">
+        <li>Open <b>medal.tv</b> in your browser while logged in</li>
+        <li>Press <kbd>F12</kbd>, open the <b>Network</b> tab and refresh the page</li>
+        <li>Type <b>api</b> in the filter and click any <b>medal.tv/api/…</b> request</li>
+        <li>Copy the <b>X-Authentication</b> request header</li>
+      </ol>
+      <input id="token-input" placeholder="12345678,a1b2c3…" spellcheck="false" />
+      <p id="token-error" class="error" hidden></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn btn-quiet" formnovalidate>Cancel</button>
+        <button id="token-submit" class="btn btn-accent" value="ok">Log in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="toasts"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

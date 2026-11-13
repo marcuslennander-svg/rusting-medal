@@ -1,0 +1,5 @@
+target/
+**/*.pdb
+gui/gen/
+.DS_Store
+Thumbs.db
