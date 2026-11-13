@@ -94,5 +94,7 @@ cargo test                        # run in both crates before committing
 1. Pick the top unchecked item from ROADMAP.md (or what the user asked for).
 2. Make the change; keep diffs focused.
 3. `cargo build --release` + `cargo test` in the crate(s) you touched.
-4. Update ROADMAP.md (check items off, add follow-ups you discovered) and README if user-facing.
-5. Commit with a clear message: `area: what changed` (e.g. `gui: retry failed downloads`).
+4. Refresh the prebuilt binaries in `dist/` (`dist/rusting-medal.exe`, `dist/medal-dl.exe`)
+   when shipping/pushing changes.
+5. Update ROADMAP.md (check items off, add follow-ups you discovered) and README if user-facing.
+6. Commit with a clear message: `area: what changed` (e.g. `gui: retry failed downloads`).

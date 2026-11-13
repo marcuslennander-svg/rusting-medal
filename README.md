@@ -2,13 +2,13 @@
 
 Super fast Medal.tv clip downloader for montages, written in Rust. Saves the original MP4 with no watermark.
 
-- **Desktop app:** `rusting-medal.exe` (Tauri 2)
-- **CLI:** `medal-dl.exe`
+- **Desktop app:** [dist/rusting-medal.exe](dist/rusting-medal.exe) (Tauri 2)
+- **CLI:** [dist/medal-dl.exe](dist/medal-dl.exe)
 
 > Working on the code (human or AI)? Read [AGENTS.md](AGENTS.md) and [ROADMAP.md](ROADMAP.md) first.
 
 ## Desktop app (`rusting-medal.exe`)
-`gui\target\release\rusting-medal.exe`
+Prebuilt binary: `dist\rusting-medal.exe` (or build to `gui\target\release\rusting-medal.exe`).
 
 - **Log in with Medal**: opens Medal's sign-in window. Email, Discord, Steam and the other social logins all work there. If Google/YouTube refuses the embedded window, use **Log in with a session token** instead.
 - **Browse your library** in a grid with thumbnails and hover previews. Filter by **Not downloaded** or **Game**, and sort by **Newest / Oldest / Longest / Shortest**. Sort and filter choices are remembered between launches.
@@ -30,7 +30,7 @@ Super fast Medal.tv clip downloader for montages, written in Rust. Saves the ori
 | `Ctrl+V` | Paste links anywhere in the window |
 
 ## CLI (`medal-dl.exe`)
-`target\release\medal-dl.exe`
+Prebuilt binary: `dist\medal-dl.exe` (or build to `target\release\medal-dl.exe`).
 
 Double-click `medal-dl.exe` for interactive/clipboard mode, or run:
 ```
